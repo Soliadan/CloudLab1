@@ -1,0 +1,35 @@
+
+services:
+  db:
+    image: postgres:16.10
+    container_name: cloudlab-postgres
+    environment:
+      POSTGRES_DB: tasks_db
+      POSTGRES_USER: tasks_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tasks_user -d tasks_db"]
+      interval: 5s
+      retries: 5
+
+  api:
+    build: ./perfume_backend
+    container_name: cloudlab-api
+    ports:
+      - "127.0.0.1:8088:8088"
+    environment:
+      DB_HOST: db
+      DB_PORT: "5432"
+      DB_NAME: tasks_db
+      DB_USER: tasks_user
+      DB_PASSWORD: ${DB_PASSWORD}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

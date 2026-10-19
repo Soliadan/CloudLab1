@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# CloudLab1 - sensitive and local files
+.env
+.venv/
+*.db
+*.db-journal
