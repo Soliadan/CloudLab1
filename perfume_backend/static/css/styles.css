@@ -1,0 +1,160 @@
+:root {
+  --ink: #2b2230;
+  --ink-soft: #514355;
+  --muted: #776e76;
+  --wine: #70425c;
+  --cream: #faf7f5;
+  --blush: #eee0e3;
+  --line: #eadfe5;
+  --white: #fff;
+  --shadow: 0 13px 36px rgba(52,33,44,.07);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+  line-height: 1.5;
+}
+
+button,input,textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible {
+  outline: 3px solid #ba8d9e;
+  outline-offset: 3px;
+}
+
+.container {
+  width: min(1140px,calc(100% - 40px));
+  margin-inline: auto;
+}
+
+.ui-header {
+  background: #fff;
+  border-bottom: 1px solid var(--line);
+}
+
+.ui-header__bar {
+  min-height: 94px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  flex-wrap: wrap;
+}
+
+.brand {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.brand__logo {
+  display: inline-grid;
+  place-items: center;
+  width: 41px;
+  height: 41px;
+  border-radius: 50%;
+  background: #f2e2e7;
+  color: var(--wine);
+  font-size: 25px;
+}
+
+.brand__name {
+  font-family: Georgia,"Times New Roman",serif;
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -.6px;
+}
+
+.brand__tag {
+  border-left: 1px solid #decfd5;
+  padding-left: 12px;
+  color: #887483;
+  letter-spacing: 2px;
+  font-size: 10px;
+  text-transform: uppercase;
+  font-weight: 750;
+}
+
+.nav {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.nav button {
+  border: 0;
+  background: none;
+  padding: 12px 13px;
+  color: var(--ink-soft);
+  font-weight: 650;
+  border-radius: 8px;
+}
+
+.nav button:hover {
+  background: #f6edf0;
+  color: var(--wine);
+}
+
+.live-pill {
+  color: #655261;
+  background: #f7f1f2;
+  border: 1px solid #eddee4;
+  border-radius: 100px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  background: #66977b;
+  border-radius: 50%;
+  margin-right: 7px;
+}
+
+.search-wide {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding-top: 0;
+  padding-bottom: 22px;
+}
+
+.search-wide input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #dfd5db;
+  border-radius: 9px;
+  background: #fbf9fa;
+  padding: 13px 15px;
+  color: var(--ink);
+  outline-color: var(--wine);
+}
+
+.btn,.btn-download {
+  border: 0;
+  background: var(--wine);
+  color: #fff;

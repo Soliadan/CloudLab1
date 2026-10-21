@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#2b2230" />
+  <title>Solomia’s Perfume Shop</title>
+  <link rel="stylesheet" href="/static/css/styles.css" />
+</head>
+<body>
+<header class="ui-header">
+  <div class="ui-header__bar container">
+    <a class="brand" href="/" aria-label="Perfume Shop home">
+      <span class="brand__logo" aria-hidden="true">✦</span>
+      <span class="brand__name">Solomia’s</span>
+      <span class="brand__tag">Perfume Shop</span>
+    </a>
+
+    <nav class="nav" aria-label="Main navigation">
+      <button type="button" onclick="toggleMainPage()">Home</button>
+      <button type="button" onclick="toggleMainPage()">Products</button>
+      <button type="button" onclick="toggleCreatePage()">Add perfume</button>
+    </nav>
+
+    <div class="icons">
+      <span class="live-pill"><span class="live-dot"></span>Live catalog</span>
+    </div>
+  </div>
+
+  <div class="search-wide container">
+    <label class="sr-only" for="input_search">Search perfumes</label>
+    <input id="input_search" type="search" placeholder="Search perfumes or brands..." />
+    <button id="search_btn" class="btn" type="button">Search</button>
+    <button id="cancel_search_btn" class="btn btn--ghost" type="button">Clear</button>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="hero__overlay container">
+    <p class="eyebrow">THE FRAGRANCE EDIT</p>
+    <h1>Find your signature scent.</h1>
+    <p>Explore your collection, discover favorites, and keep every perfume in one place.</p>
+  </div>
+</section>
+
+<main id="main_page" class="container" aria-label="Perfume catalog">
+  <div class="toolbar">
+    <div>
+      <p class="eyebrow eyebrow--dark">YOUR COLLECTION</p>
+      <h2>Perfume catalog</h2>
+      <p id="catalog_count" class="catalog-count"></p>
+    </div>
+    <div class="toolbar__right">
+      <label class="sort-label" for="sort_objects">Sort by price (low to high)</label>
+      <label class="switch">
+        <input type="checkbox" id="sort_objects" />
+        <span class="slider round"></span>
+      </label>
+    </div>
+  </div>
+
+  <div id="feedback" class="feedback" role="status" aria-live="polite" hidden></div>
+  <ul class="perfume-grid" id="orders_list"></ul>
+  <div id="empty_state" class="empty" hidden>No perfumes yet. Add your first fragrance to get started.</div>
+</main>
+
+<main id="create_page" class="create_container" hidden>
+  <form id="add_form" class="add-form">
+    <p class="eyebrow eyebrow--dark">YOUR COLLECTION</p>
+    <h2>Add a perfume</h2>
+    <div class="create-block">
+      <label for="parfume_name_input">Perfume name</label>
+      <input type="text" id="parfume_name_input" maxlength="255" required placeholder="e.g. Bleu de Chanel" />
+
+      <label for="Volume_input">Volume / Notes</label>
+      <textarea id="Volume_input" maxlength="255" required placeholder="e.g. 100 ml"></textarea>
+
+      <label for="brand_input">Brand</label>
+      <input type="text" id="brand_input" maxlength="255" required placeholder="e.g. Chanel" />
+
+      <label for="order_date_input">Date</label>
+      <input type="date" id="order_date_input" required />
+
+      <label for="price_input">Price, $</label>
+      <input type="number" id="price_input" min="0" max="2147483647" step="1" required placeholder="Price in $" />
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn-download" id="submit_btn">Add perfume</button>
+      <button type="button" class="btn btn--ghost" onclick="toggleMainPage()">Cancel</button>
+    </div>
+  </form>
+</main>
+
+<main id="edit_page" class="edit_container" hidden>
+  <form id="edit_form" class="add-form">
+    <p class="eyebrow eyebrow--dark">YOUR COLLECTION</p>
+    <h2>Edit perfume</h2>
+    <div class="create-block">
+      <label for="edit_parfume_name_input">Perfume name</label>
+      <input type="text" id="edit_parfume_name_input" maxlength="255" required />
+
+      <label for="edit_Volume_input">Volume / Notes</label>
+      <textarea id="edit_Volume_input" maxlength="255" required></textarea>
+
+      <label for="edit_brand_input">Brand</label>
+      <input type="text" id="edit_brand_input" maxlength="255" required />
+
+      <label for="edit_order_date_input">Date</label>
+      <input type="date" id="edit_order_date_input" required />
+
+      <label for="edit_price_input">Price, $</label>
+      <input type="number" id="edit_price_input" min="0" max="2147483647" step="1" required />
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn-download" id="edit_btn">Save changes</button>
+      <button type="button" class="btn btn--ghost" onclick="toggleMainPage()">Cancel</button>
+    </div>
+  </form>
+</main>
+
+<footer class="footer">SOL<span>✦</span> PERFUME SHOP</footer>
+<script src="/static/js/index.js" defer></script>
+</body>
+</html>

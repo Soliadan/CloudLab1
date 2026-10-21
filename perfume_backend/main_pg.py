@@ -1,12 +1,11 @@
-
+from pathlib import Path
 import uuid
 from datetime import date
 
 import psycopg
 from werkzeug.exceptions import HTTPException
 
-from flask import Flask, request, jsonify, abort
-
+from flask import Flask, request, jsonify, abort, send_file
 from psycopg.errors import UniqueViolation
 
 try:
@@ -27,10 +26,7 @@ COLUMNS = 'id, parfume_name, volume AS "Volume", brand, order_date, price'
 
 @app.get("/")
 def home():
-    return jsonify({
-        "service": "perfume-backend",
-        "status": "ok"
-    })
+    return send_file(Path(__file__).with_name("index.html"))
 
 
 @app.get("/health")
