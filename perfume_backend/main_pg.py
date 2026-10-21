@@ -37,8 +37,7 @@ def home():
 def health():
     with get_connection() as conn:
         conn.execute("SELECT 1 FROM orders LIMIT 0")
-    return jsonify({"status": "ok"})
-
+    return jsonify({"status": "ok"}), 200, {"X-Deployment-Test": "github-actions"}
 
 @app.get("/orders")
 def get_orders():
