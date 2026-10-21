@@ -1,0 +1,94 @@
+name: Deploy approved infrastructure
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: [Checks]
+    types: [completed]
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    # Explicit opt-in. Leave false until the owner approves cloud spending.
+    if: >-
+      vars.AWS_DEPLOY_ENABLED == 'true' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.head_branch == 'main'))
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.10
+        env:
+          POSTGRES_DB: cloudlab_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: isolated-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U test -d cloudlab_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      TEST_DATABASE_URL: postgresql://test:isolated-ci-only@localhost:5432/cloudlab_test
+      AWS_REGION: ${{ vars.AWS_REGION || 'eu-north-1' }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DEPLOY_SHA }}
+      - name: Reject stale commits before requesting AWS credentials
+        run: |
+          git fetch origin main --depth=1
+          test "$(git rev-parse origin/main)" = "$DEPLOY_SHA"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt
+      - run: ruff check perfume_backend tests --select E9,F63,F7,F82
+      - run: python -m pytest -q
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: login
+      - name: Build and push immutable commit image (allow safe retry)
+        env:
+          REGISTRY: ${{ steps.login.outputs.registry }}
+        run: |
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids "imageTag=$DEPLOY_SHA" >/dev/null 2>&1; then
+            echo "Commit image already exists"
+          else
+            docker build --platform linux/amd64 -t "$REGISTRY/$ECR_REPOSITORY:$DEPLOY_SHA" perfume_backend
+            docker push "$REGISTRY/$ECR_REPOSITORY:$DEPLOY_SHA"
+          fi
+      - name: Deploy and verify; restore previous task on failure
+        env:
+          REGISTRY: ${{ steps.login.outputs.registry }}
+        run: |
+          set -euo pipefail
+          PREVIOUS=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
+          COUNT=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].desiredCount' --output text)
+          test "$COUNT" -gt 0 || { echo 'Set approved desired_count >= 1 with Terraform first'; exit 1; }
+          aws ecs describe-task-definition --task-definition "$PREVIOUS" --query taskDefinition > task.json
+          jq --arg image "$REGISTRY/$ECR_REPOSITORY:$DEPLOY_SHA" 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy) | (.containerDefinitions[] | select(.name == "api") | .image) = $image' task.json > next.json
+          NEXT=$(aws ecs register-task-definition --cli-input-json file://next.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$NEXT" >/dev/null
+          if aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" &&
+             test "$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].taskDefinition' --output text)" = "$NEXT"; then
+            echo "Deployment verified: $DEPLOY_SHA"
+          else
+            aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$PREVIOUS" >/dev/null
+            aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+            echo 'Deployment failed; previous task restored'
+            exit 1
+          fi

@@ -1,0 +1,13 @@
+aws_account_id = "REPLACE_VERIFIED_PROJECT_ACCOUNT_ID"
+region = "eu-north-1"
+name = "cloudlab1"
+environment = "lab"
+desired_count = 0
+# existing_github_oidc_arn = "arn:aws:iam::ACCOUNT:oidc-provider/token.actions.githubusercontent.com"
+
+db_backup_retention_days = 7
+log_retention_days = 7
+
+# Tag of your actual locally built linux/amd64 API image; upload before starting tasks.
+image_tag = "lab-amd64"
+enable_github_deployment = false

@@ -1,0 +1,9 @@
+bucket              = "REPLACE-existing-state-bucket"
+key                 = "cloudlab1/lab/terraform.tfstate"
+region              = "eu-north-1"
+encrypt             = true
+use_lockfile        = true
+allowed_account_ids = ["REPLACE_STATE_BUCKET_OPERATOR_ACCOUNT_ID"]
+# If the older key cloudlab1/lab.tfstate already exists, recover it first.
+# A key change requires reviewed init -migrate-state, never an empty new state.
+# For an existing bucket, keep its actual region; this example does not migrate state.

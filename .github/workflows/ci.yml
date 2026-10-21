@@ -1,0 +1,47 @@
+name: Checks
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.10
+        env:
+          POSTGRES_DB: cloudlab_test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: isolated-ci-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U test -d cloudlab_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://test:isolated-ci-only@localhost:5432/cloudlab_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: ruff check perfume_backend tests --select E9,F63,F7,F82
+      - run: python -m pytest -q
+      - run: docker build -t cloudlab1:${{ github.sha }} perfume_backend
+  terraform:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        directory: [infra, terraform/budget, terraform/state-bootstrap]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.16.6'
+      - run: terraform -chdir=${{ matrix.directory }} fmt -check
+      - run: terraform -chdir=${{ matrix.directory }} init -backend=false -lockfile=readonly
+      - run: terraform -chdir=${{ matrix.directory }} validate

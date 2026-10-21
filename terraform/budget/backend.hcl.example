@@ -1,0 +1,7 @@
+bucket               = "REPLACE-existing-state-bucket"
+key                  = "cloudlab1/budget/terraform.tfstate"
+region               = "eu-north-1"
+encrypt              = true
+use_lockfile         = true
+allowed_account_ids  = ["REPLACE_STATE_BUCKET_OPERATOR_ACCOUNT_ID"]
+# For an existing bucket, keep its actual region; this example does not migrate state.

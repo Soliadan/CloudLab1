@@ -1,8 +1,12 @@
 
 import uuid
+from datetime import date
+
+import psycopg
+from werkzeug.exceptions import HTTPException
 
 from flask import Flask, request, jsonify, abort
-from flask_cors import CORS
+
 from psycopg.errors import UniqueViolation
 
 try:
@@ -13,7 +17,8 @@ except ModuleNotFoundError as exc:
     from database_pg import get_connection
 
 app = Flask(__name__)
-CORS(app)
+app.config["MAX_CONTENT_LENGTH"] = 65536
+
 app.json.compact = False
 app.json.ensure_ascii = False
 
@@ -30,6 +35,8 @@ def home():
 
 @app.get("/health")
 def health():
+    with get_connection() as conn:
+        conn.execute("SELECT 1 FROM orders LIMIT 0")
     return jsonify({"status": "ok"})
 
 
@@ -61,25 +68,9 @@ def get_order(id):
 def create_order():
     data = request.get_json(silent=True)
 
-    required = ["parfume_name", "Volume", "brand",
-                "order_date", "price"]
-
-    if not isinstance(data, dict) or any(
-        field not in data for field in required
-    ):
-        return jsonify({"error": "Missing required fields"}), 400
-
-    try:
-        values = (
-            str(data.get("id") or uuid.uuid4().hex[:8]),
-            str(data["parfume_name"]),
-            str(data["Volume"]),
-            str(data["brand"]),
-            str(data["order_date"]),
-            int(data["price"])
-        )
-    except (TypeError, ValueError):
-        return jsonify({"error": "Invalid price"}), 400
+    data = validate_payload(data, complete=True, allow_id=True)
+    values = (data.get("id", uuid.uuid4().hex), data["parfume_name"],
+              data["Volume"], data["brand"], data["order_date"], data["price"])
 
     try:
         with get_connection() as conn:
@@ -110,21 +101,8 @@ def update_order(id):
         "price": "price"
     }
 
-    if not isinstance(data, dict):
-        return jsonify({"error": "Invalid JSON"}), 400
-
-    fields = {k: v for k, v in data.items() if k in allowed}
-
-    if not fields:
-        return jsonify({"error": "No fields to update"}), 400
-
-    try:
-        values = [
-            int(value) if key == "price" else str(value)
-            for key, value in fields.items()
-        ]
-    except (TypeError, ValueError):
-        return jsonify({"error": "Invalid price"}), 400
+    fields = validate_payload(data, complete=request.method == "PUT")
+    values = list(fields.values())
 
     assignments = ", ".join(
         f"{allowed[key]} = %s" for key in fields
@@ -158,6 +136,48 @@ def delete_order(id):
         abort(404, description="Order not found")
 
     return "", 204
+
+
+def validate_payload(data, complete=False, allow_id=False):
+    required = {"parfume_name", "Volume", "brand", "order_date", "price"}
+    allowed = required | ({"id"} if allow_id else set())
+    if not isinstance(data, dict) or not data:
+        abort(400, description="Expected a nonempty JSON object")
+    if set(data) - allowed or (complete and required - set(data)):
+        abort(400, description="Unknown or missing fields")
+    for key, value in data.items():
+        if key == "price":
+            if type(value) is not int or not 0 <= value <= 2147483647:
+                abort(400, description="price must be a nonnegative 32-bit integer")
+        elif not isinstance(value, str) or not value.strip() or len(value) > 255:
+            abort(400, description=f"{key} must be a nonempty string, at most 255 characters")
+    if "order_date" in data:
+        try:
+            if date.fromisoformat(data["order_date"]).isoformat() != data["order_date"]:
+                raise ValueError()
+        except ValueError:
+            abort(400, description="order_date must be YYYY-MM-DD")
+    return data
+
+
+@app.errorhandler(HTTPException)
+def http_error(exc):
+    response = exc.get_response()
+    response.data = app.json.dumps({"error": exc.description})
+    response.content_type = "application/json"
+    return response
+
+
+@app.errorhandler(psycopg.Error)
+def database_error(exc):
+    app.logger.error("Database operation failed: %s", type(exc).__name__)
+    return jsonify(error="Database unavailable or operation failed"), 503
+
+
+@app.errorhandler(Exception)
+def unexpected_error(exc):
+    app.logger.error("Unexpected error: %s", type(exc).__name__)
+    return jsonify(error="Internal server error"), 500
 
 
 if __name__ == "__main__":
