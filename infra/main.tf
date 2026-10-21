@@ -290,8 +290,13 @@ resource "aws_iam_role_policy" "github" {
       },
       {
         Effect   = "Allow"
-        Action   = ["ecs:RegisterTaskDefinition", "ecs:DescribeTaskDefinition"]
+        Action   = ["ecs:RegisterTaskDefinition"]
         Resource = "arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:task-definition/${local.prefix}:*"
+      },
+      {
+        Effect   = "Allow"
+        Action   = ["ecs:DescribeTaskDefinition"]
+        Resource = "*"
       },
       { Effect = "Allow", Action = ["ecs:UpdateService", "ecs:DescribeServices"], Resource = aws_ecs_service.main.id },
       {
