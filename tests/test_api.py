@@ -16,6 +16,29 @@ def client():
     return app.test_client()
 
 
+class FakeConnection:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def execute(self, *args, **kwargs):
+        return self
+
+
+def test_health_and_home(client, monkeypatch):
+    monkeypatch.setattr("perfume_backend.main_pg.get_connection", FakeConnection)
+    health = client.get("/health")
+    assert health.status_code == 200
+    assert health.json["status"] == "ok"
+    assert health.json["version"]
+    assert health.headers["X-App-Version"] == health.json["version"]
+    home = client.get("/")
+    assert home.status_code == 200
+    assert home.mimetype == "text/html"
+
+
 @pytest.mark.parametrize("data", [None, [], {}, {**PAYLOAD, "price": -1},
     {**PAYLOAD, "price": True}, {**PAYLOAD, "price": 1.5},
     {**PAYLOAD, "brand": None}, {**PAYLOAD, "order_date": "tomorrow"},

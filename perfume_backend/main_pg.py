@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import uuid
 from datetime import date
@@ -22,6 +23,7 @@ app.json.compact = False
 app.json.ensure_ascii = False
 
 COLUMNS = 'id, parfume_name, volume AS "Volume", brand, order_date, price'
+APP_VERSION = os.getenv("APP_VERSION", "dev")
 
 
 @app.get("/")
@@ -33,11 +35,16 @@ def home():
 def health():
     with get_connection() as conn:
         conn.execute("SELECT 1 FROM orders LIMIT 0")
-    return jsonify({"status": "ok"}), 200, {"X-Deployment-Test": "github-actions"}
+    return (
+        jsonify({"status": "ok", "version": APP_VERSION}),
+        200,
+        {"X-App-Version": APP_VERSION},
+    )
+
 
 @app.get("/orders")
 def get_orders():
-    query = f"SELECT {COLUMNS} FROM orders"
+    query = f"SELECT {COLUMNS} FROM orders ORDER BY order_date DESC, id"
 
     with get_connection() as conn:
         orders = conn.execute(query).fetchall()

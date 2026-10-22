@@ -148,6 +148,8 @@ resource "aws_iam_role_policy" "execution" {
     { Effect = "Allow", Action = ["secretsmanager:GetSecretValue"], Resource = aws_db_instance.main.master_user_secret[0].secret_arn }
   ] })
 }
+# The task role is intentionally empty: the API only needs the execution role
+# to pull the image, write logs and read the RDS-managed secret.
 resource "aws_iam_role" "task" {
   name               = "${local.prefix}-task"
   assume_role_policy = aws_iam_role.execution.assume_role_policy
@@ -171,11 +173,12 @@ resource "aws_ecs_task_definition" "main" {
     environment = [
       { name = "DB_HOST", value = aws_db_instance.main.address },
       { name = "DB_NAME", value = "tasks_db" }, { name = "DB_USER", value = "tasks_user" },
-      { name = "DB_SSLMODE", value = "require" }
+      { name = "DB_SSLMODE", value = "require" },
+      { name = "APP_VERSION", value = var.image_tag }
     ],
     secrets          = [{ name = "DB_PASSWORD", valueFrom = "${aws_db_instance.main.master_user_secret[0].secret_arn}:password::" }],
     logConfiguration = { logDriver = "awslogs", options = { awslogs-group = aws_cloudwatch_log_group.app.name, awslogs-region = var.region, awslogs-stream-prefix = "api" } },
-    healthCheck      = { command = ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8088/health', timeout=6)"], interval = 30, timeout = 8, retries = 3, startPeriod = 30 }
+    healthCheck      = { command = ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8088/health', timeout=6)"], interval = 15, timeout = 8, retries = 5, startPeriod = 60 }
   }])
 }
 resource "aws_lb" "main" {
@@ -186,14 +189,19 @@ resource "aws_lb" "main" {
   security_groups    = [aws_security_group.alb.id]
 }
 resource "aws_lb_target_group" "main" {
-  name        = local.prefix
-  port        = 8088
-  protocol    = "HTTP"
-  target_type = "ip"
-  vpc_id      = aws_vpc.main.id
+  name                 = local.prefix
+  port                 = 8088
+  protocol             = "HTTP"
+  target_type          = "ip"
+  vpc_id               = aws_vpc.main.id
+  deregistration_delay = 30
   health_check {
-    path    = "/health"
-    matcher = "200"
+    path                = "/health"
+    matcher             = "200"
+    interval            = 15
+    timeout             = 5
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
   }
 }
 resource "aws_lb_listener" "http" {
@@ -212,7 +220,7 @@ resource "aws_ecs_service" "main" {
   desired_count                     = var.desired_count
   launch_type                       = "FARGATE"
   platform_version                  = "1.4.0"
-  health_check_grace_period_seconds = 60
+  health_check_grace_period_seconds = 120
   deployment_circuit_breaker {
     enable   = true
     rollback = true
@@ -229,16 +237,16 @@ resource "aws_ecs_service" "main" {
   }
   lifecycle { ignore_changes = [task_definition] }
   depends_on = [
-    aws_lb_listener.http, aws_iam_role_policy.execution, aws_nat_gateway.main,
-    aws_route_table_association.private, aws_route_table_association.public,
+    aws_db_instance.main, aws_lb_listener.http, aws_iam_role_policy.execution,
+    aws_nat_gateway.main, aws_route_table_association.private,
+    aws_route_table_association.public,
     aws_vpc_security_group_ingress_rule.alb_http, aws_vpc_security_group_ingress_rule.app,
     aws_vpc_security_group_ingress_rule.db, aws_vpc_security_group_egress_rule.app_https,
     aws_vpc_security_group_egress_rule.alb_app, aws_vpc_security_group_egress_rule.app_db
   ]
 }
 
-# Provider is account-global: verify inventory first; reuse an existing ARN when present.
-# Explicit SCP denies cannot be overridden by attaching a more permissive IAM policy.
+# Provider is account-global: reuse an existing ARN when present.
 resource "aws_iam_openid_connect_provider" "github" {
   count          = var.enable_github_deployment && var.existing_github_oidc_arn == "" ? 1 : 0
   url            = "https://token.actions.githubusercontent.com"
@@ -302,7 +310,7 @@ resource "aws_iam_role_policy" "github" {
       {
         Effect    = "Allow"
         Action    = ["iam:PassRole"]
-        Resource  = [aws_iam_role.execution.arn, aws_iam_role.task.arn]
+        Resource  = [aws_iam_role.execution.arn]
         Condition = { StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" } }
       }
     ]

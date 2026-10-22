@@ -23,7 +23,9 @@ def get_connection():
 
 
 if __name__ == "__main__":
-    # Add the table if missing; preserve existing orders.
     with get_connection() as conn:
+        # Serialize concurrent task starts so CREATE TABLE IF NOT EXISTS cannot
+        # race when ECS launches several replicas at once.
+        conn.execute("SELECT pg_advisory_xact_lock(20261022)")
         conn.execute(Path(__file__).with_name("schema.sql").read_text())
     print("Schema initialized; existing orders preserved.")

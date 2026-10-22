@@ -74,17 +74,44 @@ jobs:
       - name: Deploy and verify; restore previous task on failure
         env:
           REGISTRY: ${{ steps.login.outputs.registry }}
+          APP_URL: ${{ vars.APP_URL }}
         run: |
           set -euo pipefail
           PREVIOUS=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
           COUNT=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].desiredCount' --output text)
           test "$COUNT" -gt 0 || { echo 'Set approved desired_count >= 1 with Terraform first'; exit 1; }
           aws ecs describe-task-definition --task-definition "$PREVIOUS" --query taskDefinition > task.json
-          jq --arg image "$REGISTRY/$ECR_REPOSITORY:$DEPLOY_SHA" 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy) | (.containerDefinitions[] | select(.name == "api") | .image) = $image' task.json > next.json
+          jq --arg image "$REGISTRY/$ECR_REPOSITORY:$DEPLOY_SHA" --arg version "$DEPLOY_SHA" '
+            del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy)
+            | (.containerDefinitions[] | select(.name == "api")) |= (
+                .image = $image
+                | .environment = ((.environment // []) | map(select(.name != "APP_VERSION")) + [{name: "APP_VERSION", value: $version}])
+              )
+          ' task.json > next.json
           NEXT=$(aws ecs register-task-definition --cli-input-json file://next.json --query 'taskDefinition.taskDefinitionArn' --output text)
           aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$NEXT" >/dev/null
+
+          verify_live_version() {
+            if [ -z "${APP_URL:-}" ]; then
+              echo 'APP_URL is not configured; skipping live version check'
+              return 0
+            fi
+            for _ in $(seq 1 30); do
+              BODY=$(curl -fsS --max-time 5 "${APP_URL%/}/health" 2>/dev/null) || BODY=""
+              DEPLOYED=$(printf '%s' "$BODY" | jq -r '.version // empty' 2>/dev/null) || DEPLOYED=""
+              if [ "$DEPLOYED" = "$DEPLOY_SHA" ]; then
+                echo "Live version verified: $DEPLOYED"
+                return 0
+              fi
+              sleep 10
+            done
+            echo "Live version mismatch; expected $DEPLOY_SHA, got ${DEPLOYED:-none}"
+            return 1
+          }
+
           if aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" &&
-             test "$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].taskDefinition' --output text)" = "$NEXT"; then
+             test "$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].taskDefinition' --output text)" = "$NEXT" &&
+             verify_live_version; then
             echo "Deployment verified: $DEPLOY_SHA"
           else
             aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$PREVIOUS" >/dev/null

@@ -1,36 +1,142 @@
 # CloudLab1 — Flask REST API в AWS
 
-Лабораторна за п’ятьма обов’язковими завданнями: Flask + Docker + PostgreSQL; Terraform + ECR/RDS/ECS Fargate; private subnets і Security Groups; ALB HTTP:80 з `/health`; GitHub Actions з OIDC та image tag = commit SHA. Повної методички у workspace немає, тому відповідність перевірено за вимогами власника.
+**Репозиторій:** https://github.com/Soliadan/CloudLab1
 
-## Структура та принцип роботи
+**Публічна адреса:** http://cloudlab1-lab-1602657390.eu-north-1.elb.amazonaws.com
 
-- `perfume_backend/`: `main_pg.py` — REST API; `database_pg.py` — підключення й явна ініціалізація PostgreSQL; `schema.sql` — таблиця orders; Dockerfile і runtime залежності. `migrate_data.py` потрібен для перенесення збережених локальних SQLite-даних, автоматично не запускається.
-- `compose.yaml`, `.env.example`: локальний API та PostgreSQL із persistent volume. Dockerfile має pinned base image за SHA256, non-root UID 10001 і Gunicorn.
-- `infra/`: `main.tf` містить ресурси лабораторної, `variables.tf` — параметри, `outputs.tf` — адреси та IDs, `versions.tf` — provider і S3 backend. Lockfile фіксує provider.
-- `terraform/state-bootstrap/`: окремий root уже створеного S3 bucket. `terraform/budget/`: збережена конфігурація наявного бюджету з prevent_destroy та gate перед відновленням керування. Ці roots не потрібні для запуску API і не застосовуються разом з infra.
-- `.github/workflows/ci.yml`: API/CRUD тести на окремій PostgreSQL, lint, Docker build, Terraform validate. `deploy.yml`: після успішного Checks для push main отримує OIDC credentials, завантажує image з повним SHA перевіреного commit і оновлює ECS з перевіркою та rollback. Ручний запуск повторює тести.
-- `tests/test_api.py`, кореневий `requirements.txt`: перевірки та dev залежності; runtime залежності підключаються з `perfume_backend/requirements.txt` без дублювання.
+**Healthcheck:** http://cloudlab1-lab-1602657390.eu-north-1.elb.amazonaws.com/health
 
-Схема AWS: internet → ALB:80 у двох public subnets → ECS:8088 у private subnets → RDS:5432. DB Security Group приймає з’єднання лише від app Security Group. ECS не має public IP; один NAT потрібен для вихідного доступу до ECR, Logs і Secrets Manager. Пароль генерує RDS, ECS execution role читає його з managed secret. CloudWatch Logs залишений для діагностики контейнера.
+Проєкт демонструє повний цикл розробки та розгортання Flask REST API з PostgreSQL: локальний запуск через Docker Compose, інфраструктура в AWS через Terraform, приватна база даних, Application Load Balancer і CI/CD через GitHub Actions з OIDC.
 
-## Локальний запуск і API
+## Що реалізовано
 
-Якщо `.env` відсутній, скопіювати `.env.example` і встановити DB_PASSWORD. Існуючий `.env` і пароль наявного PostgreSQL volume не перезаписувати.
+| № | Завдання | Реалізація |
+|---|---|---|
+| 1 | Docker + PostgreSQL | Flask API і PostgreSQL запускаються через `docker compose`; дані зберігаються у volume `postgres_data`. |
+| 2 | Terraform + ECR + RDS + ECS | Інфраструктура описана в `infra/`; використовується ECS Fargate, ECR і приватний RDS PostgreSQL. |
+| 3 | Private subnets і Security Groups | RDS не має публічного доступу; DB Security Group приймає трафік лише від app Security Group. |
+| 4 | ALB і `/health` | Internet-facing ALB є єдиною публічною точкою; target group перевіряє `/health`. |
+| 5 | CI/CD через GitHub OIDC | GitHub Actions отримує тимчасові AWS-credentials через OIDC, збирає image з тегом commit SHA і оновлює ECS. |
+
+## Архітектура AWS
+
+```text
+Internet
+   │
+   ▼
+Application Load Balancer :80
+   │  public subnets
+   ▼
+ECS Fargate :8088
+   │  private subnets
+   ▼
+RDS PostgreSQL :5432
+   │  private subnets
+   ▼
+Secrets Manager
+```
+
+- ALB приймає HTTP-трафік і перевіряє target через `/health`.
+- ECS task не має public IP.
+- RDS доступний лише з app Security Group.
+- NAT Gateway потрібен ECS для доступу до ECR, CloudWatch Logs і Secrets Manager.
+- Пароль RDS генерується AWS і зберігається в Secrets Manager; ECS читає його через `secrets`, а не через відкритий текст.
+
+## Структура проєкту
+
+```text
+.
+├── compose.yaml                  # локальний API + PostgreSQL + volume
+├── .env.example                  # шаблон локальних змінних
+├── perfume_backend/
+│   ├── Dockerfile                # образ API
+│   ├── docker-entrypoint.sh      # ініціалізація схеми перед стартом
+│   ├── main_pg.py                # Flask REST API
+│   ├── database_pg.py            # підключення до PostgreSQL
+│   ├── schema.sql                # таблиця orders
+│   ├── index.html                # веб-інтерфейс
+│   ├── static/
+│   │   ├── css/styles.css
+│   │   └── js/index.js
+│   └── requirements.txt
+├── infra/                        # основний Terraform-стек AWS
+│   ├── main.tf
+│   ├── variables.tf
+│   ├── outputs.tf
+│   └── versions.tf
+├── terraform/
+│   ├── state-bootstrap/          # S3 bucket для Terraform state
+│   └── budget/                   # AWS Budget
+├── .github/workflows/
+│   ├── ci.yml                    # тести, lint, Docker build, Terraform validate
+│   └── deploy.yml                # OIDC deployment в ECS
+├── tests/test_api.py
+├── requirements.txt
+└── README.md
+```
+
+## Локальний запуск
 
 ```sh
+cp .env.example .env
+# встановити DB_PASSWORD у .env
+
 docker compose config --quiet
 docker compose up -d --build --wait
+docker compose ps
 curl -i http://127.0.0.1:8088/health
-curl -i http://127.0.0.1:8088/orders
 ```
 
-API: GET `/`, `/health`, `/orders`, `/orders/{id}`; POST `/orders`; PUT/PATCH/DELETE `/orders/{id}`. POST повертає 201, DELETE — 204, відсутній ID — 404, дубль ID — 409, неправильні дані — 400, недоступна БД — 503. `/health` перевіряє доступ до таблиці orders. Приклад POST:
+Сайт локально: `http://127.0.0.1:8088`
 
-```json
-{"parfume_name":"Rose","Volume":"50ml","brand":"Lab","order_date":"2026-10-20","price":100}
+Не виконувати `docker compose down -v`: ця команда видаляє volume `postgres_data` разом з даними.
+
+## API
+
+| Метод | Шлях | Призначення |
+|---|---|---|
+| GET | `/` | Веб-інтерфейс |
+| GET | `/health` | Перевірка API і доступності таблиці `orders` |
+| GET | `/orders` | Список замовлень |
+| GET | `/orders/{id}` | Одне замовлення |
+| POST | `/orders` | Створити замовлення |
+| PUT / PATCH | `/orders/{id}` | Оновити замовлення |
+| DELETE | `/orders/{id}` | Видалити замовлення |
+
+Приклад створення:
+
+```sh
+curl -i -X POST http://127.0.0.1:8088/orders \
+  -H 'Content-Type: application/json' \
+  -d '{"parfume_name":"Rose","Volume":"50ml","brand":"Lab","order_date":"2026-10-20","price":100}'
 ```
 
-Новий volume отримує schema.sql автоматично. Для явної ініціалізації порожньої бази використовується `python database_pg.py` всередині API container/task: CREATE TABLE IF NOT EXISTS зберігає існуючі orders. `migrate_data.py` читає наявний `perfume.db` без змін і переносить записи без перезапису наявних IDs; запускати лише за потреби й з дозволом на зміну БД. Не виконувати `docker compose down -v`: це видаляє дані.
+Коди відповідей: `201` — створено, `204` — видалено, `400` — неправильні дані, `404` — не знайдено, `409` — дубль ID, `503` — база недоступна.
+
+## Секрети та конфігурація
+
+- Локально пароль передається через `.env`; `.env` не комітиться.
+- У хмарі пароль RDS зберігається в AWS Secrets Manager.
+- ECS отримує пароль через `secrets`, а не через `environment`.
+- `infra/backend.hcl`, `terraform.tfvars` і `private-artifacts/` ігноруються Git.
+- CI/CD не використовує довговічні AWS access keys: доступ видається через GitHub OIDC і IAM role.
+
+## Terraform
+
+- `infra/` — основний стек: VPC, subnets, Security Groups, ALB, ECR, ECS Fargate, RDS, IAM і OIDC.
+- `terraform/state-bootstrap/` — окремий root для S3 bucket, у якому зберігається Terraform state.
+- `terraform/budget/` — окремий root для наявного AWS Budget.
+- Приватні backend/tfvars не зберігаються в репозиторії.
+- `terraform apply` і `terraform destroy` виконуються лише після перевірки плану та окремого дозволу.
+
+## CI/CD
+
+- `ci.yml` перевіряє compose-конфігурацію, запускає тести на окремій PostgreSQL, виконує lint, збирає Docker image і перевіряє Terraform.
+- `deploy.yml` запускається після успішного `Checks` для `main`.
+- Деплой отримує тимчасові credentials через OIDC, збирає image з повним commit SHA, оновлює ECS і перевіряє `/health`.
+- У разі невдачі повертається попередня task definition.
+
+## Тести
 
 ```sh
 .venv/bin/python -m pip install -r requirements.txt
@@ -40,24 +146,12 @@ terraform fmt -recursive -check
 terraform -chdir=infra validate
 ```
 
-Integration test потребує TEST_DATABASE_URL **окремої тестової PostgreSQL**. CI створює її автоматично. Без URL CRUD-тест пропускається; робочу базу для нього не використовувати.
+Локально: **11 passed, 1 skipped**. Пропущений тест потребує окремої PostgreSQL через `TEST_DATABASE_URL`; робочу базу для нього не використовувати.
 
-## AWS, State і завершення лабораторної
+## Поточний стан
 
-Profile `cloudlab`, account `107585009937`, region `eu-north-1`. Використовується існуючий S3 bucket `cloudlab1-state-107585009937-eu-north-1-f2fbb9cf6735`, ключ infra — `cloudlab1/lab/terraform.tfstate`. Приватний `infra/backend.hcl` уже підключений: не змінювати key і не створювати bucket повторно. Bootstrap State, його backup, усі приватні backend/tfvars і старі plans збережені; State та секрети не комітити. `.venv`, `.terraform`, кеші та локальні БД ігноруються Git.
-
-Read-only AWS перевірка дозволила ресурси №2–4 з контекстом регіону; EC2 DryRun підтвердив VPC/subnet/route table/SG. OIDC Provider має SCP explicitDeny. Його реалізація й GitHub role збережені під `enable_github_deployment=false`: це блокує завдання №5, але виключає OIDC з плану №2–4. Не змінювати Advanced Features, Spend Limit, бюджет або SCP. Не замінювати OIDC постійними AWS keys.
-
-Після очищення Terraform і Docker image змінилися: **попередній `private-artifacts/lab-2-4.tfplan` застарів і не повинен застосовуватися**. Перед погодженим розгортанням заново зібрати linux/amd64 image очищеного API, обрати його тег у приватному terraform.tfvars та сформувати новий Plan:
-
-```sh
-AWS_PROFILE=cloudlab AWS_REGION=eu-north-1 terraform -chdir=infra plan -input=false
-```
-
-Порядок після окремого дозволу на AWS витрати: створити infra з desired_count=0 → завантажити справжній image до ECR з тим самим image_tag → запустити одноразовий ECS task `python database_pg.py` у тих самих private subnets/SG → погоджено встановити desired_count=1 і перевірити ALB `/health` та CRUD. Зміни task definition після першого запуску потрібно явно розгортати в ECS, бо service ігнорує task_definition drift, яким керує CI.
-
-Для №5 потрібне вирішення SCP адміністратором, enable_github_deployment=true та GitHub Variables AWS_REGION, AWS_ROLE_ARN, ECR_REPOSITORY, ECS_CLUSTER, ECS_SERVICE. AWS_DEPLOY_ENABLED=true вмикається лише після дозволу й робочого ECS service. Потрібно продемонструвати успішний автоматичний deployment після push main.
-
-Орієнтир малого stack — приблизно $0.12–0.15/год без credits/tax; NAT, ALB, RDS та IPv4 оплачуються навіть при desired_count=0. Apply/Destroy/Import/Push потребують окремого дозволу. Destroy infra видаляє RDS без фінального snapshot і ECR разом з images; S3 backend і бюджет зберігаються в окремих roots. Історичні task definition revisions CI не повністю керуються Terraform. Budget root не запускати для створення повторного cloud-lab-budget: спочатку відновити authoritative State або окремо погодити import точних поточних налаштувань; очікується no-op plan.
-
-Для завершення потрібні новий переглянутий Plan, погоджене AWS розгортання, доступний HTTP API через ALB і підтверджений Actions/OIDC deployment. Фактичну оцінку визначає викладач за повною методичкою.
+- ECS Fargate service: `1/1` running.
+- ALB target: healthy.
+- RDS: private, `PubliclyAccessible=false`.
+- Публічний `/health`: HTTP 200.
+- AWS-доступ CI/CD: OIDC, без статичних ключів.

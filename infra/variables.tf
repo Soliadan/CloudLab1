@@ -62,14 +62,6 @@ variable "image_tag" {
     error_message = "Provide a real API image tag; upload it before setting desired_count above zero."
   }
 }
-variable "github_repository" {
-  type    = string
-  default = "Soliadan/CloudLab1"
-  validation {
-    condition     = can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository))
-    error_message = "Use an exact owner/repository, no wildcards or subject suffixes."
-  }
-}
 variable "github_branch" {
   type    = string
   default = "main"
@@ -108,9 +100,8 @@ variable "log_retention_days" {
   }
 }
 
-
 variable "enable_github_deployment" {
-  description = "Task 5: GitHub OIDC and deployment role; disabled while SCP blocks OIDC."
+  description = "Task 5: create the GitHub OIDC deployment role and its least-privilege policy."
   type        = bool
   default     = false
 }
