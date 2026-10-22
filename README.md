@@ -1,157 +1,195 @@
-# CloudLab1 — Flask REST API в AWS
+# Лабораторна робота №1
+
+# Perfume Shop API: розгортання в AWS (Terraform)
+
+REST API для роботи із замовленнями парфумів на Flask і PostgreSQL. Застосунок запускається локально через Docker Compose та розгортається в AWS за допомогою Terraform. Автоматичне оновлення налаштоване через GitHub Actions.
 
 **Репозиторій:** https://github.com/Soliadan/CloudLab1
 
 **Публічна адреса:** http://cloudlab1-lab-1602657390.eu-north-1.elb.amazonaws.com
 
-**Healthcheck:** http://cloudlab1-lab-1602657390.eu-north-1.elb.amazonaws.com/health
+**Health check:** http://cloudlab1-lab-1602657390.eu-north-1.elb.amazonaws.com/health
 
-Проєкт демонструє повний цикл розробки та розгортання Flask REST API з PostgreSQL: локальний запуск через Docker Compose, інфраструктура в AWS через Terraform, приватна база даних, Application Load Balancer і CI/CD через GitHub Actions з OIDC.
-
-## Що реалізовано
-
-| № | Завдання | Реалізація |
-|---|---|---|
-| 1 | Docker + PostgreSQL | Flask API і PostgreSQL запускаються через `docker compose`; дані зберігаються у volume `postgres_data`. |
-| 2 | Terraform + ECR + RDS + ECS | Інфраструктура описана в `infra/`; використовується ECS Fargate, ECR і приватний RDS PostgreSQL. |
-| 3 | Private subnets і Security Groups | RDS не має публічного доступу; DB Security Group приймає трафік лише від app Security Group. |
-| 4 | ALB і `/health` | Internet-facing ALB є єдиною публічною точкою; target group перевіряє `/health`. |
-| 5 | CI/CD через GitHub OIDC | GitHub Actions отримує тимчасові AWS-credentials через OIDC, збирає image з тегом commit SHA і оновлює ECS. |
-
-## Архітектура AWS
-
-```text
-Internet
-   │
-   ▼
-Application Load Balancer :80
-   │  public subnets
-   ▼
-ECS Fargate :8088
-   │  private subnets
-   ▼
-RDS PostgreSQL :5432
-   │  private subnets
-   ▼
-Secrets Manager
-```
-
-- ALB приймає HTTP-трафік і перевіряє target через `/health`.
-- ECS task не має public IP.
-- RDS доступний лише з app Security Group.
-- NAT Gateway потрібен ECS для доступу до ECR, CloudWatch Logs і Secrets Manager.
-- Пароль RDS генерується AWS і зберігається в Secrets Manager; ECS читає його через `secrets`, а не через відкритий текст.
-
-## Структура проєкту
-
-```text
-.
-├── compose.yaml                  # локальний API + PostgreSQL + volume
-├── .env.example                  # шаблон локальних змінних
-├── perfume_backend/
-│   ├── Dockerfile                # образ API
-│   ├── docker-entrypoint.sh      # ініціалізація схеми перед стартом
-│   ├── main_pg.py                # Flask REST API
-│   ├── database_pg.py            # підключення до PostgreSQL
-│   ├── schema.sql                # таблиця orders
-│   ├── index.html                # веб-інтерфейс
-│   ├── static/
-│   │   ├── css/styles.css
-│   │   └── js/index.js
-│   └── requirements.txt
-├── infra/                        # основний Terraform-стек AWS
-│   ├── main.tf
-│   ├── variables.tf
-│   ├── outputs.tf
-│   └── versions.tf
-├── terraform/
-│   ├── state-bootstrap/          # S3 bucket для Terraform state
-│   └── budget/                   # AWS Budget
-├── .github/workflows/
-│   ├── ci.yml                    # тести, lint, Docker build, Terraform validate
-│   └── deploy.yml                # OIDC deployment в ECS
-├── tests/test_api.py
-├── requirements.txt
-└── README.md
-```
-
-## Локальний запуск
-
-```sh
-cp .env.example .env
-# встановити DB_PASSWORD у .env
-
-docker compose config --quiet
-docker compose up -d --build --wait
-docker compose ps
-curl -i http://127.0.0.1:8088/health
-```
-
-Сайт локально: `http://127.0.0.1:8088`
-
-Не виконувати `docker compose down -v`: ця команда видаляє volume `postgres_data` разом з даними.
-
-## API
+## Ендпоінти
 
 | Метод | Шлях | Призначення |
 |---|---|---|
-| GET | `/` | Веб-інтерфейс |
-| GET | `/health` | Перевірка API і доступності таблиці `orders` |
-| GET | `/orders` | Список замовлень |
-| GET | `/orders/{id}` | Одне замовлення |
-| POST | `/orders` | Створити замовлення |
-| PUT / PATCH | `/orders/{id}` | Оновити замовлення |
-| DELETE | `/orders/{id}` | Видалити замовлення |
+| GET | `/` | Головна сторінка |
+| GET | `/health` | Перевірка API та бази даних |
+| GET | `/orders` | Перегляд замовлень |
+| GET | `/orders/<id>` | Замовлення за ID |
+| POST | `/orders` | Створення замовлення |
+| PUT, PATCH | `/orders/<id>` | Редагування замовлення |
+| DELETE | `/orders/<id>` | Видалення замовлення |
 
-Приклад створення:
+Усі замовлення зберігаються в PostgreSQL.
 
-```sh
-curl -i -X POST http://127.0.0.1:8088/orders \
-  -H 'Content-Type: application/json' \
-  -d '{"parfume_name":"Rose","Volume":"50ml","brand":"Lab","order_date":"2026-10-20","price":100}'
+## Структура репозиторію
+
+| Файл | Призначення |
+|---|---|
+| `perfume_backend/main_pg.py` | Flask API та ендпоінти |
+| `perfume_backend/database_pg.py` | Підключення до PostgreSQL |
+| `perfume_backend/schema.sql` | Створення таблиці orders |
+| `perfume_backend/requirements.txt` | Бібліотеки Python |
+| `perfume_backend/Dockerfile` | Збірка Docker-образу |
+| `compose.yaml` | Локальний запуск API та PostgreSQL |
+| `infra/main.tf` | Основна AWS-інфраструктура |
+| `infra/variables.tf` | Змінні Terraform |
+| `infra/outputs.tf` | Адреси та параметри створених ресурсів |
+| `infra/versions.tf` | Провайдер і налаштування Terraform |
+| `terraform/state-bootstrap/` | S3 bucket для Terraform state |
+| `terraform/budget/` | AWS Budget |
+| `.github/workflows/ci.yml` | Перевірки коду та Docker |
+| `.github/workflows/deploy.yml` | Автоматичний deployment |
+
+## Локальний запуск
+
+Для локального запуску використовується Docker Compose. Він запускає Flask API та PostgreSQL в окремих контейнерах.
+
+Спочатку потрібно створити `.env` із шаблону `.env.example` та вказати пароль бази даних.
+
+```bash
+cp .env.example .env
+docker compose up -d --build --wait
 ```
 
-Коди відповідей: `201` — створено, `204` — видалено, `400` — неправильні дані, `404` — не знайдено, `409` — дубль ID, `503` — база недоступна.
+Перевірка:
 
-## Секрети та конфігурація
+```bash
+curl http://localhost:8088/health
+curl http://localhost:8088/orders
+```
 
-- Локально пароль передається через `.env`; `.env` не комітиться.
-- У хмарі пароль RDS зберігається в AWS Secrets Manager.
-- ECS отримує пароль через `secrets`, а не через `environment`.
-- `infra/backend.hcl`, `terraform.tfvars` і `private-artifacts/` ігноруються Git.
-- CI/CD не використовує довговічні AWS access keys: доступ видається через GitHub OIDC і IAM role.
+Зупинити контейнери:
 
-## Terraform
+```bash
+docker compose down
+```
 
-- `infra/` — основний стек: VPC, subnets, Security Groups, ALB, ECR, ECS Fargate, RDS, IAM і OIDC.
-- `terraform/state-bootstrap/` — окремий root для S3 bucket, у якому зберігається Terraform state.
-- `terraform/budget/` — окремий root для наявного AWS Budget.
-- Приватні backend/tfvars не зберігаються в репозиторії.
-- `terraform apply` і `terraform destroy` виконуються лише після перевірки плану та окремого дозволу.
+Дані PostgreSQL зберігаються у volume `postgres_data` і залишаються після звичайного `docker compose down`.
+
+У Dockerfile використано зафіксовану версію базового образу. Залежності встановлюються окремим шаром, а застосунок запускається не від root.
+
+## Розгортання в AWS
+
+Інфраструктура описана Terraform.
+
+| Сервіс | Призначення |
+|---|---|
+| Amazon ECR | Реєстр Docker-образів |
+| Amazon ECS Fargate | Запуск Flask-контейнера |
+| Amazon RDS | PostgreSQL у хмарі |
+| Amazon VPC | Мережа та підмережі |
+| Security Groups | Контроль мережевого доступу |
+| Application Load Balancer | Публічний доступ до API |
+| AWS Secrets Manager | Зберігання пароля бази |
+| IAM та OIDC | Доступ GitHub Actions до AWS |
+| Amazon S3 | Зберігання Terraform state |
+
+Основна конфігурація розташована в `infra/`.
+
+```bash
+cd infra
+terraform init -backend-config=backend.hcl
+terraform validate
+terraform plan
+terraform apply
+terraform output
+```
+
+Перед першим розгортанням потрібно створити S3 backend через `terraform/state-bootstrap/`. Для початкового запуску також потрібно завантажити Docker-образ у ECR та створити таблицю в RDS.
+
+## Мережа та безпека
+
+Вхідний трафік проходить через Application Load Balancer, який пересилає запити до ECS Fargate.
+
+Схема роботи:
+
+```text
+Internet
+   |
+   v
+Application Load Balancer :80
+   |
+   v
+ECS Fargate :8088
+   |
+   v
+RDS PostgreSQL :5432
+```
+
+ALB розміщений у публічних підмережах. ECS та RDS працюють у приватних.
+
+База даних не має публічної IP-адреси. Її Security Group дозволяє підключення на порт 5432 лише від Security Group застосунку.
+
+ECS приймає запити на порт 8088 тільки від ALB. Для перевірки доступності використовується `/health` з очікуваним кодом HTTP 200.
+
+Пароль RDS зберігається в AWS Secrets Manager і передається контейнеру під час запуску. Локальні паролі та приватні Terraform-конфігурації не додаються до GitHub.
 
 ## CI/CD
 
-- `ci.yml` перевіряє compose-конфігурацію, запускає тести на окремій PostgreSQL, виконує lint, збирає Docker image і перевіряє Terraform.
-- `deploy.yml` запускається після успішного `Checks` для `main`.
-- Деплой отримує тимчасові credentials через OIDC, збирає image з повним commit SHA, оновлює ECS і перевіряє `/health`.
-- У разі невдачі повертається попередня task definition.
+Автоматичне розгортання виконується через GitHub Actions.
 
-## Тести
+Після push у гілку `main` запускається перевірка коду, а після успішного завершення — deployment.
 
-```sh
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m pytest -q
-.venv/bin/ruff check perfume_backend tests --select E9,F63,F7,F82
-terraform fmt -recursive -check
-terraform -chdir=infra validate
+```text
+Push to main
+     |
+     v
+GitHub Actions
+     |
+     v
+Docker build
+     |
+     v
+Amazon ECR (commit SHA)
+     |
+     v
+Amazon ECS Fargate
+     |
+     v
+Application Load Balancer
 ```
 
-Локально: **11 passed, 1 skipped**. Пропущений тест потребує окремої PostgreSQL через `TEST_DATABASE_URL`; робочу базу для нього не використовувати.
+Для доступу до AWS використовується OIDC та IAM Role без постійних access keys.
 
-## Поточний стан
+Новий Docker-образ отримує тег із SHA коміту та завантажується в ECR. Після цього GitHub Actions оновлює task definition в ECS і перевіряє розгортання.
 
-- ECS Fargate service: `1/1` running.
-- ALB target: healthy.
-- RDS: private, `PubliclyAccessible=false`.
-- Публічний `/health`: HTTP 200.
-- AWS-доступ CI/CD: OIDC, без статичних ключів.
+## Перевірка API
+
+Отримати всі замовлення:
+
+```bash
+curl http://localhost:8088/orders
+```
+
+Створити замовлення:
+
+```bash
+curl -X POST http://localhost:8088/orders \
+-H "Content-Type: application/json" \
+-d '{
+  "parfume_name": "Rose",
+  "Volume": "50ml",
+  "brand": "Lab",
+  "order_date": "2026-10-20",
+  "price": 100
+}'
+```
+
+Після створення запис можна переглянути через `GET /orders`.
+
+У AWS використовуються ті самі API-ендпоінти через публічну адресу ALB.
+
+## Видалення інфраструктури
+
+Для видалення основної інфраструктури:
+
+```bash
+cd infra
+terraform plan -destroy
+terraform destroy
+```
+
+S3 backend і AWS Budget керуються окремими Terraform-конфігураціями. Їх необхідно перевірити та видалити окремо, якщо потрібно повністю очистити AWS-акаунт від ресурсів лабораторної.
