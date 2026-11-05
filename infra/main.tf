@@ -154,7 +154,15 @@ resource "aws_iam_role" "task" {
   name               = "${local.prefix}-task"
   assume_role_policy = aws_iam_role.execution.assume_role_policy
 }
-resource "aws_ecs_cluster" "main" { name = local.prefix }
+resource "aws_ecs_cluster" "main" {
+  name = local.prefix
+
+  setting {
+    name  = "containerInsights"
+    value = "enabled"
+  }
+}
+
 resource "aws_ecs_task_definition" "main" {
   family                   = local.prefix
   requires_compatibilities = ["FARGATE"]
@@ -235,7 +243,7 @@ resource "aws_ecs_service" "main" {
     container_name   = "api"
     container_port   = 8088
   }
-  lifecycle { ignore_changes = [task_definition] }
+  lifecycle { ignore_changes = [task_definition, desired_count] }
   depends_on = [
     aws_db_instance.main, aws_lb_listener.http, aws_iam_role_policy.execution,
     aws_nat_gateway.main, aws_route_table_association.private,

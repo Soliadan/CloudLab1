@@ -28,6 +28,7 @@ services:
       DB_NAME: tasks_db
       DB_USER: tasks_user
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      CACHE_ENABLED: ${CACHE_ENABLED:-true}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8088/health', timeout=6)"]
       interval: 30s

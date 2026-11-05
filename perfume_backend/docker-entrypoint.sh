@@ -1,8 +1,9 @@
 #!/bin/sh
 set -eu
 
-# Apply the idempotent schema before the API starts. This makes a fresh RDS
-# instance (or a new compose volume) usable without a manual one-off ECS task.
+# готує все перед запуском
+# маленький скрипт, який працює перед запуском Flask
+#вперше запуска лабу, але таблиці для парфумів у PostgreSQL ще немає
 attempt=0
 until python database_pg.py; do
     attempt=$((attempt + 1))
