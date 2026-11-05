@@ -20,26 +20,41 @@ The maximum of 3 tasks limits AWS costs.
 
 ## Cooldown
 
-Cooldown prevents frequent scaling changes.
+Cooldown helps prevent frequent scaling changes.
 
 Without cooldown, the service could scale
 too frequently, causing instability and
 unnecessary resource usage.
 
+The scale-out cooldown is 60 seconds, allowing
+the service to respond relatively quickly to
+increasing CPU utilization.
+
+The scale-in cooldown is 300 seconds, helping
+prevent premature removal of running tasks.
+
 ## Test Results
 
-During the k6 load test with 20 users,
-CPU utilization exceeded 60%.
+During the k6 load test with 20 virtual users,
+CPU utilization exceeded the target of 60%
+and reached approximately 99%.
 
-AWS successfully increased the number
-of running tasks from 1 to 2.
+AWS successfully increased the number of
+running ECS tasks from 1 to 2 and then to 3.
 
-Scale-in: pending verification.
+After the load test, CPU utilization decreased
+to approximately 2.7%.
 
+AWS gradually reduced the number of running
+tasks from 3 to 2 and then back to 1.
+
+This confirmed that both scale-out and
+scale-in were functioning.
 
 ## Monitoring
 
 The CloudWatch Dashboard contains five graphs:
+
 - Desired and running ECS tasks
 - CPU utilization
 - Requests per minute
@@ -54,48 +69,51 @@ The CloudWatch Dashboard contains five graphs:
 
 ![Requests and Response Time](screenshots/metrics.png)
 
-
-
 ## Scaling Analysis
 
-During the load test, CPU utilization increased above
-the 60% threshold and reached approximately 99%.
+During the load test, CPU utilization increased
+above the configured 60% target.
 
-AWS automatically increased the number of ECS tasks
-from 1 to 2 and then to 3.
+As CPU utilization increased, AWS automatically
+added new ECS tasks to handle the additional load.
 
-After the load test, CPU utilization decreased to
-approximately 2.7%, and AWS gradually reduced
-the number of tasks from 3 to 1.
+The number of running tasks increased from
+1 to 2 and then to 3.
 
-Scaling does not happen immediately because AWS
-needs time to collect and evaluate CloudWatch metrics.
+After the load test ended, CPU utilization
+decreased significantly.
+
+AWS gradually reduced the number of tasks
+from 3 to 1.
+
+Scaling does not happen immediately because
+AWS needs time to collect and evaluate
+CloudWatch metrics.
+
+Starting new ECS tasks also requires time
+for container initialization and health checks.
+
+Scale-in happens more slowly because AWS
+must avoid removing tasks too early while
+the service is still processing requests.
 
 The configured cooldown periods are:
+
 - Scale-out: 60 seconds
 - Scale-in: 300 seconds
 
-These delays prevent frequent scaling changes
-and help maintain service stability.
+These settings help maintain service stability
+and avoid unnecessary scaling changes.
 
-## Scaling Analysis
+## Conclusion
 
-During the load test, CPU utilization increased above
-the 60% threshold and reached approximately 99%.
+The automatic scaling policy worked successfully
+during the load test.
 
-AWS automatically increased the number of ECS tasks
-from 1 to 2 and then to 3.
+AWS ECS increased the number of tasks when
+CPU utilization exceeded the target and
+reduced the number of tasks after the
+workload decreased.
 
-After the load test, CPU utilization decreased to
-approximately 2.7%, and AWS gradually reduced
-the number of tasks from 3 to 1.
-
-Scaling does not happen immediately because AWS
-needs time to collect and evaluate CloudWatch metrics.
-
-The configured cooldown periods are:
-- Scale-out: 60 seconds
-- Scale-in: 300 seconds
-
-These delays prevent frequent scaling changes
-and help maintain service stability.
+The service scaled between 1 and 3 tasks,
+as configured in Terraform.
