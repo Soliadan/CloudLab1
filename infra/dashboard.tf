@@ -102,6 +102,45 @@ resource "aws_cloudwatch_dashboard" "lab2" {
             { stat = "Sum", label = "ALB 5xx" }]
           ]
         }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 18
+        width  = 12
+        height = 6
+        properties = {
+          title  = "SQS Queue Length"
+          region = var.region
+          period = 60
+          metrics = [
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible",
+              "QueueName", aws_sqs_queue.orders.name,
+            { stat = "Average", label = "Waiting messages" }]
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 18
+        width  = 12
+        height = 6
+        properties = {
+          title  = "Worker Tasks"
+          region = var.region
+          period = 60
+          metrics = [
+            ["ECS/ContainerInsights", "DesiredTaskCount",
+              "ClusterName", aws_ecs_cluster.main.name,
+              "ServiceName", aws_ecs_service.worker.name,
+            { stat = "Average", label = "Desired workers" }],
+            ["ECS/ContainerInsights", "RunningTaskCount",
+              "ClusterName", aws_ecs_cluster.main.name,
+              "ServiceName", aws_ecs_service.worker.name,
+            { stat = "Average", label = "Running workers" }]
+          ]
+        }
       }
     ]
   })

@@ -6,6 +6,7 @@ from datetime import date
 import psycopg
 import time
 import threading
+from functools import lru_cache
 
 from werkzeug.exceptions import HTTPException
 from flask import Flask, request, jsonify, abort, send_file
@@ -46,6 +47,12 @@ COLUMNS = 'id, parfume_name, volume AS "Volume", brand, order_date, price'
 
 # Версія програми
 APP_VERSION = os.getenv("APP_VERSION", "dev")
+
+
+@lru_cache(maxsize=1)
+def get_sqs_client(*args, **kwargs):
+    import boto3
+    return boto3.client(*args, **kwargs)
 
 
 # ГОЛОВНА СТОРІНКА
@@ -199,6 +206,50 @@ def create_order():
         return jsonify({"error": "ID already exists"}), 409
 
     return jsonify(order), 201
+
+
+# ASYNC CREATE - надсилає замовлення в Amazon SQS
+
+@app.post("/async-orders")
+def create_order_async():
+    import json
+
+    data = validate_payload(
+        request.get_json(silent=True),
+        complete=True,
+        allow_id=True
+    )
+
+    order_id = data.get("id") or uuid.uuid4().hex
+    data["id"] = order_id
+
+    queue_url = os.getenv("SQS_QUEUE_URL")
+
+    if not queue_url:
+        return jsonify({
+            "error": "SQS queue is not configured"
+        }), 503
+
+    sqs = get_sqs_client(
+        "sqs",
+        region_name=os.getenv("AWS_REGION", "eu-north-1")
+    )
+
+    sqs.send_message(
+        QueueUrl=queue_url,
+        MessageBody=json.dumps(data, default=str)
+    )
+
+    response = jsonify({
+        "id": order_id,
+        "status": "queued",
+        "check_url": f"/orders/{order_id}"
+    })
+
+    response.status_code = 202
+    response.headers["Location"] = f"/orders/{order_id}"
+
+    return response
 
 
 # UPDATE - змінює існуючий парфум
